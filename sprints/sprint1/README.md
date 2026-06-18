@@ -1,102 +1,74 @@
-# TRIBE v2 Evaluation — Sprint 1 Plan
+# Sprint 1: Environment + Data Acquisition
 
-**Goal:** Set up environment, download TRIBE v2 model + IBC contrast maps, parcellate with Glasser 360 atlas.
+**Goal:** Clone TRIBE v2 repo, download model weights, get IBC raw fMRI from OpenNeuro S3.
 
-**Duration:** Sprint 1
+## Completed
 
----
+- [x] S1-1: Clone `facebookresearch/tribev2`, install in polyblock venv (torch 2.12.1+cu130, sm_120 RTX 5080 compatible)
+- [x] S1-2: Download `facebook/tribev2` model weights from HuggingFace (676 MB `best.ckpt`) → `environment/models/tribev2/`
+- [x] S1-3: Download IBC raw fMRI from OpenNeuro S3 (4 tasks × ~1 GB, sub-07)
 
-## Step 1 — TRIBE v2 Setup
+## In Progress
 
-### S1-1: Clone TRIBE v2 repo + environment
-- Clone https://github.com/facebookresearch/tribev2
-- Follow README for environment setup
-- Verify: `import tribev2` in Python works
+### S1-3: Download IBC raw fMRI from OpenNeuro S3
 
-### S1-2: Download TRIBE v2 model weights
-- From https://huggingface.co/facebook/tribev2
-- Verify: unseen-subject linear layer loads, check dimensions
+**Status:** Running in background (~4 GB total)
 
----
+**S3 URL pattern:** `https://s3.amazonaws.com/openneuro.org/ds002685/{path}`
 
-## Step 2 — IBC Data Acquisition + Parcellation
+**Files being downloaded:**
+- `sub-07/ses-15/task-PreferenceFaces` (FaceBody family)
+- `sub-07/ses-00/task-ArchiStandard` (Visu family)
+- `sub-07/ses-03/task-RSVPLanguage` (RSVP Language family)
+- `sub-07/ses-04/task-ArchiEmotional` (Emotional family)
+- Supporting: events TSV, task JSON, fieldmaps (AP/PA epi), T1w
 
-### S1-3: Download IBC contrast maps
-- Use `ibc_api` package or EBRAINS direct access
-- Download z-scored GLM contrast maps for all 4 task families:
-  - **FaceBody** (faces, places, body parts, characters, tools)
-  - **Visu** (visual categories)
-  - **RSVP** (sentences vs. word lists)
-  - **EmotionalPain** (emotional vs. physical pain)
-- Download for **all available subjects** in MNI volumetric space
+**Why sub-07?** Randomly chosen from 12 available subjects. Pipeline works with any subject.
 
-### S1-4: Download IBC group-average contrast maps
-- Corresponding group-average maps for each task family
-- These are the reference for R_tribe_vs_group
+### S1-4: Compute GLM contrast maps
+After raw download → nilearn `FirstLevelModel` GLM fitting → z-scored contrast maps.
 
-### S1-5: Parcellate with Glasser 360 atlas
-- Download Glasser 360 parcellation (MNI space, 360 parcels)
-- Parcellate all per-subject and group-average contrast maps
-- Output: numpy array shape (360,) per subject per contrast
-- Store in structured directory: `data/parcellated/{task}/{contrast}/{subject}.npy`
+### S1-5: Parcellation
+Using Schaefer 100/200 (downloaded from OSF) instead of Glasser 360 (NITRC blocked).
+
+### S1-6: Backlog for S2–S4
 
 ---
 
-## Task Families & Contrasts
+## Network access situation (documented for reproducibility)
 
-| Task Family | Contrast | Modality |
-|---|---|---|
-| FaceBody | faces vs. fixation | visual |
-| FaceBody | places vs. fixation | visual |
-| FaceBody | body parts vs. fixation | visual |
-| FaceBody | characters vs. fixation | visual |
-| FaceBody | tools vs. fixation | visual |
-| Visu | (visual categories) | visual |
-| RSVP | sentences vs. word lists | language |
-| RSVP | complex vs. simple sentences | language |
-| EmotionalPain | emotional vs. physical pain | language |
+| Host | Status | Notes |
+|------|--------|-------|
+| github.com | ✓ | All repos accessible |
+| huggingface.co | ✓ | Model weights, datasets |
+| nitrc.org (web) | ✓ | Directory listing only |
+| osf.io | ✓ | Figshare/OSF mirrors |
+| openneuro.org | ✓ | S3 bucket: `s3.amazonaws.com/openneuro.org/ds002685` |
+| api.neurovault.org | ✗ | DNS resolution fails |
+| ebrains.eu | ✗ | EBRAINS auth required |
+| nitrc.org (files) | ✗ | Session cookie required |
+| figshare.com | ✗ | SSL cert mismatch |
 
-*Exact contrast names to be confirmed from IBC dataset documentation.*
+## Model info
 
----
+**TRIBE v2** (`facebook/tribev2`):
+- 3 encoders: DINOv2-L (video) + w2v-bert-2.0 (audio) + Llama-3.2-3B (text) → concat → Transformer → fMRI
+- **20484 vertices** (fsaverage5 surface space)
+- **25 subjects** across 4 datasets (IBC, HCP, BBC, MBC)
+- Zero-shot: `average_subjects=True` → bypass per-subject linear layers
+- Contrast: outputs (n_samples, 20484) in fsaverage5 space
 
-## Directory Structure
+**IBC data** (OpenNeuro ds002685):
+- 12 subjects, 47 tasks, MNI305 space (2mm isotropic, 97×115×97)
+- Raw BIDS fMRI — need GLM fitting to get contrast maps
+
+## Pipeline after Sprint 1
 
 ```
-tribev2-evaluation/
-├── environment/
-│   ├── tribev2/          # cloned repo
-│   └── models/           # downloaded weights (facebook/tribev2)
-├── data/
-│   ├── raw/
-│   │   ├── ibc/         # raw IBC contrast maps (MNI volumina)
-│   │   ├── glasser/     # Glasser 360 atlas files
-│   │   └── ibc_group/  # group-average maps
-│   └── parcellated/
-│       └── {task}/
-│           └── {contrast}/
-│               ├── sub-01.npy  (360,)
-│               ├── sub-02.npy  (360,)
-│               └── group_avg.npy  (360,)
-├── sprints/
-│   ├── sprint1/
-│   │   ├── README.md   # this file
-│   │   └── setup.py    # environment setup script
-│   ├── sprint2/  (stimuli)
-│   ├── sprint3/  (TRIBE runs)
-│   └── sprint4/  (correlation analysis)
-└── README.md
+Raw fMRI (MNI305)
+  → nilearn FirstLevelModel GLM → z-scored contrast maps (97×115×97)
+  → TRIBE v2 zero-shot → vertex predictions (20484, fsaverage5)
+  → Project TRIBE: fsaverage5 → MNI305
+  → Correlate: TRIBE predictions vs GLM contrasts
+  → Per-contrast Pearson r → R_tribe vs R_group, R_subject
 ```
-
----
-
-## Definition of Done
-
-- [ ] `import tribev2` works in Python
-- [ ] TRIBE v2 model loads from HuggingFace
-- [ ] All available IBC subjects' contrast maps downloaded for all 4 task families
-- [ ] Group-average contrast maps downloaded for all task families
-- [ ] Glasser 360 atlas acquired
-- [ ] All contrast maps parcellated → (N_subjects × 360) numpy arrays on disk
-- [ ] README.md updated with exact paths and download commands used
-- [ ] All code committed to GitHub org
